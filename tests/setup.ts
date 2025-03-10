@@ -1,18 +1,12 @@
 import knex from 'src/db';
+import { clean } from 'knex-cleaner';
 
 beforeAll(async () => {
   await knex.migrate.latest();
 });
 
 beforeEach(async () => {
-  const tables = await knex.raw(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
-  );
-
-  for (const { name } of tables) {
-    await knex(name).delete();
-    await knex.raw(`DELETE FROM sqlite_sequence WHERE name='${name}'`);
-  }
+  await clean(knex);
 });
 
 afterAll(async () => {

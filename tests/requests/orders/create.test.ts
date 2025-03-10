@@ -2,20 +2,10 @@ import 'tests/setup';
 import server from 'src/server';
 import User from 'src/models/User';
 import Order, { OrderStatus } from 'src/models/Order';
-// import { LightMyRequestResponse } from 'fastify';
 import { faker } from '@faker-js/faker';
+import { Product } from 'src/models';
 
 describe('CREATE action', () => {
-  const user: Partial<User> = {
-    name: 'John Doe',
-    email: 'john.doe@email.com'
-  };
-
-  beforeAll(async () => {
-    const createdUser = await User.query().insert(user);
-    user.id = createdUser.id;
-  });
-
   const validInput = {
     customer_id: 1,
     items: [
@@ -33,6 +23,25 @@ describe('CREATE action', () => {
   };
 
   describe('when the input is valid', () => {
+    beforeEach(async () => {
+      const user: Partial<User> = {
+        name: 'John Doe',
+        email: 'john.doe@email.com'
+      };
+      await User.query().insert(user);
+
+      for (let i = 0; i < 2; i++) {
+        const product = new Product();
+        product.name = faker.string.sample();
+        product.description = faker.lorem.sentence();
+        product.price = faker.number.float({ min: 10.00, max: 100.00 });
+        product.stock = faker.number.int({ min: 10, max: 100 });
+        product.sku = faker.string.sample();
+
+        await Product.query().insert(product);
+      }
+    });
+
     const input = validInput;
 
     it('is successful', async () => {
@@ -46,7 +55,7 @@ describe('CREATE action', () => {
     });
 
     it('creates a new record', async () => {
-      const initialCount = await Order.query().where(input).resultSize();
+      const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
       await server.inject({
         method: 'POST',
@@ -54,7 +63,7 @@ describe('CREATE action', () => {
         body: input
       });
 
-      const finalCount = await Order.query().where(input).resultSize();
+      const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
       expect(finalCount).toBe(initialCount + 1);
     });
@@ -66,17 +75,20 @@ describe('CREATE action', () => {
         body: input
       });
 
-      const jsonResponse = response.json();
+      const jsonResponse = await response.json();
 
+      const expectedTotalDiscount = input.items.reduce((acc, item) => {
+        return acc += item.discount;
+      }, 0);
+
+      expect(Object.values(OrderStatus)).toContain(jsonResponse.status);
       expect(jsonResponse).toEqual(
         expect.objectContaining({
           id: expect.any(Number),
           customer_id: input.customer_id,
           total_paid: expect.any(Number),
-          total_discount: input.items.reduce((acc, item) => {
-            return acc += item.discount;
-          }, 0),
-          status: expect.any(OrderStatus),
+          total_discount: expectedTotalDiscount,
+          status: expect.any(String),
           items: expect.arrayContaining(
             expect.objectContaining({
               product_id: expect.any(Number),
@@ -96,7 +108,7 @@ describe('CREATE action', () => {
 
       it('does not create a new record', async () => {
 
-        const initialCount = await Order.query().where(input).resultSize();
+        const initialCount = await Order.query().where('customer_id', customer_id).resultSize();
 
         await server.inject({
           method: 'POST',
@@ -104,7 +116,7 @@ describe('CREATE action', () => {
           body: input,
         });
 
-        const finalCount = await Order.query().where(input).resultSize();
+        const finalCount = await Order.query().where('customer_id', customer_id).resultSize();
 
         expect(finalCount).toBe(initialCount);
       });
@@ -130,7 +142,7 @@ describe('CREATE action', () => {
 
       it('does not create a new record', async () => {
 
-        const initialCount = await Order.query().where(inputWithCustomerIdString).resultSize();
+        const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
         await server.inject({
           method: 'POST',
@@ -138,7 +150,7 @@ describe('CREATE action', () => {
           body: inputWithCustomerIdString,
         });
 
-        const finalCount = await Order.query().where(inputWithCustomerIdString).resultSize();
+        const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
         expect(finalCount).toBe(initialCount);
       });
@@ -152,7 +164,7 @@ describe('CREATE action', () => {
 
         const jsonResponse = response.json<{ message: string }>();
         expect(response.statusCode).toBe(400);
-        expect(jsonResponse.message).toMatch("property 'customer_id' must be string");
+        expect(jsonResponse.message).toMatch("property 'customer_id' must be integer");
       });
     });
   });
@@ -163,7 +175,7 @@ describe('CREATE action', () => {
 
       it('does not create a new record', async () => {
 
-        const initialCount = await Order.query().where(input).resultSize();
+        const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
         await server.inject({
           method: 'POST',
@@ -171,7 +183,7 @@ describe('CREATE action', () => {
           body: input,
         });
 
-        const finalCount = await Order.query().where(input).resultSize();
+        const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
         expect(finalCount).toBe(initialCount);
       });
@@ -185,7 +197,7 @@ describe('CREATE action', () => {
 
         const jsonResponse = response.json<{ message: string }>();
         expect(response.statusCode).toBe(400);
-        expect(jsonResponse.message).toMatch("must have required property 'items'");
+        expect(jsonResponse.message).toMatch('body/items Required');
       });
     });
 
@@ -197,7 +209,7 @@ describe('CREATE action', () => {
 
       it('does not create a new record', async () => {
 
-        const initialCount = await Order.query().where(inputWithItemsAsString).resultSize();
+        const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
         await server.inject({
           method: 'POST',
@@ -205,7 +217,7 @@ describe('CREATE action', () => {
           body: inputWithItemsAsString,
         });
 
-        const finalCount = await Order.query().where(inputWithItemsAsString).resultSize();
+        const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
         expect(finalCount).toBe(initialCount);
       });
@@ -219,7 +231,7 @@ describe('CREATE action', () => {
 
         const jsonResponse = response.json<{ message: string }>();
         expect(response.statusCode).toBe(400);
-        expect(jsonResponse.message).toMatch("property 'items' must be an array");
+        expect(jsonResponse.message).toMatch('body/items Expected array, received string');
       });
     });
 
@@ -231,7 +243,7 @@ describe('CREATE action', () => {
 
       it('does not create a new record', async () => {
 
-        const initialCount = await Order.query().where(inputWithItemsAsObject).resultSize();
+        const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
         await server.inject({
           method: 'POST',
@@ -239,7 +251,7 @@ describe('CREATE action', () => {
           body: inputWithItemsAsObject,
         });
 
-        const finalCount = await Order.query().where(inputWithItemsAsObject).resultSize();
+        const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
         expect(finalCount).toBe(initialCount);
       });
@@ -253,7 +265,7 @@ describe('CREATE action', () => {
 
         const jsonResponse = response.json<{ message: string }>();
         expect(response.statusCode).toBe(400);
-        expect(jsonResponse.message).toMatch("property 'items' must be an array");
+        expect(jsonResponse.message).toMatch('body/items Expected array, received object');
       });
     });
 
@@ -265,7 +277,7 @@ describe('CREATE action', () => {
 
       it('does not create a new record', async () => {
 
-        const initialCount = await Order.query().where(inputWithEmptyItems).resultSize();
+        const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
         await server.inject({
           method: 'POST',
@@ -273,7 +285,7 @@ describe('CREATE action', () => {
           body: inputWithEmptyItems,
         });
 
-        const finalCount = await Order.query().where(inputWithEmptyItems).resultSize();
+        const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
         expect(finalCount).toBe(initialCount);
       });
@@ -307,7 +319,7 @@ describe('CREATE action', () => {
 
           it('does not create a new record', async () => {
 
-            const initialCount = await Order.query().where(inputWithGenericProductIddOfItem).resultSize();
+            const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             await server.inject({
               method: 'POST',
@@ -315,7 +327,7 @@ describe('CREATE action', () => {
               body: inputWithGenericProductIddOfItem,
             });
 
-            const finalCount = await Order.query().where(inputWithGenericProductIddOfItem).resultSize();
+            const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             expect(finalCount).toBe(initialCount);
           });
@@ -329,7 +341,7 @@ describe('CREATE action', () => {
 
             const jsonResponse = response.json<{ message: string }>();
             expect(response.statusCode).toBe(400);
-            expect(jsonResponse.message).toMatch(`product with product_id ${inputWithGenericProductIddOfItem.items[0].product_id} not found`);
+            expect(jsonResponse.message).toMatch('Product not found.');
           });
         });
 
@@ -346,7 +358,7 @@ describe('CREATE action', () => {
 
           it('does not create a new record', async () => {
 
-            const initialCount = await Order.query().where(inputWithProductIdOfItemMissing).resultSize();
+            const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             await server.inject({
               method: 'POST',
@@ -354,7 +366,7 @@ describe('CREATE action', () => {
               body: inputWithProductIdOfItemMissing,
             });
 
-            const finalCount = await Order.query().where(inputWithProductIdOfItemMissing).resultSize();
+            const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             expect(finalCount).toBe(initialCount);
           });
@@ -386,7 +398,7 @@ describe('CREATE action', () => {
 
           it('does not create a new record', async () => {
 
-            const initialCount = await Order.query().where(inputWithProductIdOfItemAsString).resultSize();
+            const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             await server.inject({
               method: 'POST',
@@ -394,7 +406,7 @@ describe('CREATE action', () => {
               body: inputWithProductIdOfItemAsString,
             });
 
-            const finalCount = await Order.query().where(inputWithProductIdOfItemAsString).resultSize();
+            const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             expect(finalCount).toBe(initialCount);
           });
@@ -426,7 +438,7 @@ describe('CREATE action', () => {
 
           it('does not create a new record', async () => {
 
-            const initialCount = await Order.query().where(inputWithQuantityOfItemMissing).resultSize();
+            const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             await server.inject({
               method: 'POST',
@@ -434,7 +446,7 @@ describe('CREATE action', () => {
               body: inputWithQuantityOfItemMissing,
             });
 
-            const finalCount = await Order.query().where(inputWithQuantityOfItemMissing).resultSize();
+            const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             expect(finalCount).toBe(initialCount);
           });
@@ -466,7 +478,7 @@ describe('CREATE action', () => {
 
           it('does not create a new record', async () => {
 
-            const initialCount = await Order.query().where(inputWithQuantityOfItemAsString).resultSize();
+            const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             await server.inject({
               method: 'POST',
@@ -474,7 +486,7 @@ describe('CREATE action', () => {
               body: inputWithQuantityOfItemAsString,
             });
 
-            const finalCount = await Order.query().where(inputWithQuantityOfItemAsString).resultSize();
+            const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             expect(finalCount).toBe(initialCount);
           });
@@ -494,19 +506,30 @@ describe('CREATE action', () => {
       });
 
       describe('discount', () => {
-        describe('when quantity is missing', () => {
+        describe('when discount is missing', () => {
+          beforeEach(async () => {
+            const product = new Product();
+            product.name = faker.string.sample();
+            product.description = faker.lorem.sentence();
+            product.price = faker.number.float();
+            product.stock = faker.number.int({ min: 10 });
+            product.sku = faker.string.sample();
+
+            await Product.query().insert(product);
+          });
+
           const inputWithDiscountOfItemMissing = {
             ...validInput,
             items: [
               {
-                product_id: faker.number.int(),
-                quantity: faker.number.int(),
+                product_id: 1,
+                quantity: 1,
               }
             ]
           };
 
           it('does create a new record', async () => {
-            const initialCount = await Order.query().where(inputWithDiscountOfItemMissing).resultSize();
+            const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             await server.inject({
               method: 'POST',
@@ -514,7 +537,7 @@ describe('CREATE action', () => {
               body: inputWithDiscountOfItemMissing,
             });
 
-            const finalCount = await Order.query().where(inputWithDiscountOfItemMissing).resultSize();
+            const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             expect(finalCount).toBe(initialCount + 1);
           });
@@ -544,7 +567,7 @@ describe('CREATE action', () => {
 
           it('does not create a new record', async () => {
 
-            const initialCount = await Order.query().where(inputWithDiscountOfItemAsString).resultSize();
+            const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             await server.inject({
               method: 'POST',
@@ -552,7 +575,7 @@ describe('CREATE action', () => {
               body: inputWithDiscountOfItemAsString,
             });
 
-            const finalCount = await Order.query().where(inputWithDiscountOfItemAsString).resultSize();
+            const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
 
             expect(finalCount).toBe(initialCount);
           });
