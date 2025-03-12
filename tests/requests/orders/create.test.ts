@@ -99,6 +99,26 @@ describe('CREATE action', () => {
       );
       expect(jsonResponse.items.length).toBe(input.items.length);
     });
+
+    it('total_paid should be equal to the total sum of (item price * quantity) minus discount', async () => {
+      const response = await server.inject({
+        method: 'POST',
+        url: '/orders',
+        body: input
+      });
+
+      const jsonResponse = await response.json();
+
+      const totalPaidByItemArray = await Promise.all(input.items.map(async item => {
+        const discount = item.discount || 0;
+        const product = await Product.query().findById(item.product_id);
+        return (product!.price * item.quantity) - discount;
+      }));
+
+      const expectedTotalPaid = totalPaidByItemArray.reduce((acc, paid) => acc += paid);
+
+      expect(jsonResponse.total_paid).toBe(expectedTotalPaid);
+    });
   });
 
   describe('customer_id validations', () => {
