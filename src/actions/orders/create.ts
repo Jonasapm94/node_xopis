@@ -2,8 +2,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import NotEnoughStockError from '../../errors/NotEnoughStockError';
 import ProductNotFoundError from '../../errors/ProductNotFoundError';
 import { Order, OrderItem, OrderStatus, Product } from '../../models';
-import { CreateOrderRequestType, } from '../../../src/validations/order.zod';
-import { OrderItemDTO } from '../../types/CreateOrder.interface';
+import { CreateOrderRequestType, OrderItemsReplyType } from '../../../src/validations/order.zod';
 
 export default async (
     request: FastifyRequest<{ Body: CreateOrderRequestType }>,
@@ -86,5 +85,5 @@ interface OrderCreatedResponsePayload {
     total_paid: number,
     total_discount: number,
     status: OrderStatus,
-    items: Array<OrderItemDTO>
+    items: OrderItemsReplyType
 }
