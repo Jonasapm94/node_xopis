@@ -27,6 +27,7 @@ class Order extends Model {
   status!: OrderStatus;
   created_at?: Date;
   updated_at?: Date;
+  items?: Array<OrderItem>;
 
   static get jsonSchema() {
     return {
