@@ -11,54 +11,48 @@ export default async (
     const { customer_id, items } = request.body;
 
     try {
+        const order = new Order();
+        order.customer_id = customer_id;
+        order.status = OrderStatus.PaymentPending;
+        order.total_discount = items.reduce((acc, item) => {
+            acc += item.discount || 0;
+            return acc;
+        }, 0);
+        order.total_paid = 0;
+        order.total_shipping = 0;
+        order.total_tax = 0;
+
         const createdOrder = await Order.transaction(async trx => {
-            const order: Partial<Order> = {
-                customer_id,
-                status: OrderStatus.PaymentPending,
-                total_discount: items.reduce((acc, item) => {
-                    acc += item.discount || 0;
-                    return acc;
-                }, 0),
-                total_paid: 0,
-                total_shipping: 0,
-                total_tax: 0
-            };
 
-            const createdOrder = await Order.query(trx).insertAndFetch(order);
-
-            await Promise.all(items.map(async item => {
-                if (!item.discount) {
-                    item.discount = 0.00;
-                }
+            order.items = await Promise.all(items.map(async item => {
+                const discount = item.discount || 0;
 
                 const product = await Product.query(trx).findById(item.product_id);
                 if (!product) throw new ProductNotFoundError;
                 if (product!.stock < item.quantity) throw new NotEnoughStockError;
 
-                // they are set to 0 for business logic purposes
-                const tax = 0;
-                const shipping = 0;
-
-                const paid = (product.price * item.quantity) - item.discount;
-                await OrderItem.query(trx).insert({
-                    order_id: createdOrder.id,
-                    product_id: product.id,
-                    quantity: item.quantity,
-                    discount: item.discount,
-                    paid,
-                    tax,
-                    shipping,
-                });
+                const paid = (product.price * item.quantity) - discount;
 
                 const newProductStock = product.stock - item.quantity;
                 await product.$query(trx).patch({ stock: newProductStock });
 
-                createdOrder.total_paid += paid;
-                createdOrder.total_tax += tax;
-                createdOrder.total_shipping += shipping;
+                const orderItem = new OrderItem();
+                orderItem.product_id = product.id;
+                orderItem.quantity = item.quantity;
+
+                // they are set to 0 for business logic purposes
+                orderItem.tax = 0;
+                orderItem.shipping = 0;
+
+                orderItem.discount = item.discount || 0;
+                orderItem.paid = paid;
+
+                order.total_paid += paid;
+
+                return orderItem;
             }));
 
-            return await createdOrder.$query(trx).updateAndFetch(createdOrder);
+            return await order.$query(trx).insertGraphAndFetch(order);
         });
 
         const responsePayload: OrderCreatedResponsePayload = {
