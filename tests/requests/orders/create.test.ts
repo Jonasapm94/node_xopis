@@ -31,32 +31,25 @@ describe('CREATE action', () => {
         email: 'john.doe@email.com'
       });
 
-      for (let i = 0; i < 2; i++) {
-        const product = new Product();
-        product.name = faker.string.sample();
-        product.description = faker.lorem.sentence();
-        product.price = faker.number.float({ min: 10.00, max: 100.00 });
-        product.stock = faker.number.int({ min: 10, max: 100 });
-        product.sku = faker.string.sample();
+      for (let i = 0; i < 4; i++) {
+        const product = makeProduct({
+          name: faker.string.sample(),
+          description: faker.lorem.sentence(),
+          price: faker.number.float({ min: 10.00, max: 100.00 }),
+          stock: faker.number.int({ min: 10, max: 100 }),
+          sku: faker.string.sample(),
+        });
 
         await Product.query().insert(product);
       }
     });
 
     describe('when the order id was sent in the payload', () => {
-      const input = validInput;
+      const input = structuredClone(validInput);
       input.items.push({
-        product_id: 0,
+        product_id: 3,
         quantity: 5,
         discount: 4
-      });
-
-      const newProduct: Product = makeProduct({
-        name: faker.word.sample(),
-        sku: faker.string.sample(),
-        description: faker.lorem.sentence(),
-        price: faker.number.float({ min: 10.00, max: 100.00 }),
-        stock: faker.number.int({ min: 10, max: 100 })
       });
 
       beforeEach(async () => {
@@ -71,8 +64,7 @@ describe('CREATE action', () => {
         order.total_shipping = 0;
         order.total_tax = 0;
 
-        await Order.transaction(async trx => {
-
+        const createdOrder = await Order.transaction(async trx => {
           order.items = await Promise.all(input.items.map(async item => {
             const discount = item.discount || 0;
 
@@ -101,8 +93,7 @@ describe('CREATE action', () => {
           return await order.$query(trx).insertGraphAndFetch(order);
         });
 
-        const product = await newProduct.$query().insert();
-        input.items[2].product_id = product.id || 3;
+        input.id = createdOrder.id;
       });
 
       it('is successful', async () => {
@@ -193,74 +184,74 @@ describe('CREATE action', () => {
 
         expect(jsonResponse.total_paid).toBe(expectedTotalPaid);
       });
-    });
 
-    describe('when the order status is other than payment_pending', () => {
-      let order: Order | undefined;
-      beforeEach(async () => {
-        order = await Order.query().findOne('status', OrderStatus.PaymentPending);
-        order!.status = OrderStatus.Approved;
-        order!.$query().update();
-      });
-
-      it('returns a unprocessable entity response', async () => {
-        const input = validInput;
-        input.id = order!.id;
-
-        const response = await server.inject({
-          method: 'POST',
-          url: '/orders',
-          body: input
+      describe('when the order status is other than payment_pending', () => {
+        let order: Order | undefined;
+        beforeEach(async () => {
+          order = await Order.query().findOne('status', OrderStatus.PaymentPending);
+          order!.status = OrderStatus.Approved;
+          await order!.$query().update();
         });
 
-        const jsonResponse = await response.json();
+        it('returns a unprocessable entity response', async () => {
+          const input = validInput;
+          input.id = order!.id;
 
-        expect(response.statusCode).toBe(422);
-        expect(jsonResponse.message).toBe(
-          'Order with id sent has status different than payment_pending. Only orders with that status can be updated.'
-        );
-      });
+          const response = await server.inject({
+            method: 'POST',
+            url: '/orders',
+            body: input
+          });
 
-      it('does not change the order with the same id', async () => {
-        const input = validInput;
-        input.id = order!.id;
-        input.items.push({
-          product_id: 1,
-          quantity: 1,
-          discount: 0
+          const jsonResponse = await response.json();
+
+          expect(response.statusCode).toBe(422);
+          expect(jsonResponse.message).toBe(
+            'Order with id sent has status different than payment_pending. Only orders with that status can be updated.'
+          );
         });
 
-        await server.inject({
-          method: 'POST',
-          url: '/orders',
-          body: input
+        it('does not change the order with the same id', async () => {
+          const input = structuredClone(validInput);
+          input.id = order!.id;
+          input.items.push({
+            product_id: 1,
+            quantity: 1,
+            discount: 0
+          });
+
+          await server.inject({
+            method: 'POST',
+            url: '/orders',
+            body: input
+          });
+
+          const sameOrder = await Order.query().findById(order!.id);
+
+          expect(sameOrder).toMatchObject(order!);
         });
 
-        const sameOrder = await Order.query().findById(order!.id);
+        it('does not create new item in the database', async () => {
+          const input = structuredClone(validInput);
+          input.id = order!.id;
+          input.items.push({
+            product_id: 1,
+            quantity: 1,
+            discount: 0
+          });
 
-        expect(sameOrder).toMatchObject(order!);
-      });
+          const initialSize: number = await OrderItem.query().where('order_id', order!.id).resultSize();
 
-      it('does not create new item in the database', async () => {
-        const input = validInput;
-        input.id = order!.id;
-        input.items.push({
-          product_id: 1,
-          quantity: 1,
-          discount: 0
+          await server.inject({
+            method: 'POST',
+            url: '/orders',
+            body: input
+          });
+
+          const finalSize: number = await OrderItem.query().where('order_id', order!.id).resultSize();
+
+          expect(initialSize).toBe(finalSize);
         });
-
-        const initialSize: number = await OrderItem.query().where('order_id', order!.id).resultSize();
-
-        await server.inject({
-          method: 'POST',
-          url: '/orders',
-          body: input
-        });
-
-        const finalSize: number = await OrderItem.query().where('order_id', order!.id).resultSize();
-
-        expect(initialSize).toBe(finalSize);
       });
     });
 
@@ -762,18 +753,17 @@ describe('CREATE action', () => {
             await Product.query().insert(product);
           });
 
+          const { id, items, ...inputwithoutItems } = validInput;
           const inputWithDiscountOfItemMissing = {
-            ...validInput,
-            items: [
-              {
-                product_id: 1,
-                quantity: 1,
-              }
-            ]
+            ...inputwithoutItems,
+            items: [{
+              product_id: 1,
+              quantity: 2
+            }]
           };
 
           it('does create a new record', async () => {
-            const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
+            const initialCount = await Order.query().where('customer_id', inputWithDiscountOfItemMissing.customer_id).resultSize();
 
             await server.inject({
               method: 'POST',
@@ -781,7 +771,7 @@ describe('CREATE action', () => {
               body: inputWithDiscountOfItemMissing,
             });
 
-            const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
+            const finalCount = await Order.query().where('customer_id', inputWithDiscountOfItemMissing.customer_id).resultSize();
 
             expect(finalCount).toBe(initialCount + 1);
           });
@@ -836,6 +826,42 @@ describe('CREATE action', () => {
             expect(jsonResponse.message).toMatch("property 'quantity' must be an integer");
           });
         });
+      });
+    });
+  });
+
+  describe('id validations', () => {
+    describe('when id property is other than integer', () => {
+      const inputWithIdAsString = {
+        ...validInput,
+        id: faker.string.sample()
+      };
+
+      it('does not create a new record', async () => {
+
+        const initialCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
+
+        await server.inject({
+          method: 'POST',
+          url: '/orders',
+          body: inputWithIdAsString,
+        });
+
+        const finalCount = await Order.query().where('customer_id', validInput.customer_id).resultSize();
+
+        expect(finalCount).toBe(initialCount);
+      });
+
+      it('returns a bad request response', async () => {
+        const response = await server.inject({
+          method: 'POST',
+          url: '/orders',
+          body: inputWithIdAsString,
+        });
+
+        const jsonResponse = response.json<{ message: string }>();
+        expect(response.statusCode).toBe(400);
+        expect(jsonResponse.message).toMatch("property 'id' must be an integer");
       });
     });
   });
