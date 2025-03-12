@@ -35,7 +35,7 @@ describe('CREATE action', () => {
         const product = makeProduct({
           name: faker.string.sample(),
           description: faker.lorem.sentence(),
-          price: faker.number.float({ min: 10.00, max: 100.00 }),
+          price: faker.number.float({ min: 10.00, max: 100.00, fractionDigits: 2 }),
           stock: faker.number.int({ min: 10, max: 100 }),
           sku: faker.string.sample(),
         });
@@ -743,12 +743,13 @@ describe('CREATE action', () => {
       describe('discount', () => {
         describe('when discount is missing', () => {
           beforeEach(async () => {
-            const product = new Product();
-            product.name = faker.string.sample();
-            product.description = faker.lorem.sentence();
-            product.price = faker.number.float();
-            product.stock = faker.number.int({ min: 10 });
-            product.sku = faker.string.sample();
+            const product = makeProduct({
+              name: faker.string.sample(),
+              description: faker.lorem.sentence(),
+              price: faker.number.float({ min: 10.00, max: 100.00, fractionDigits: 2 }),
+              stock: faker.number.int({ min: 10 }),
+              sku: faker.string.sample(),
+            });
 
             await Product.query().insert(product);
           });
