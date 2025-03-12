@@ -7,7 +7,7 @@ export function makeOrder(o: {
     total_shipping: number,
     total_discount: number,
     status: OrderStatus
-}) {
+}, id?: number) {
     const order = new Order();
     order.customer_id = o.customer_id;
     order.total_paid = o.total_paid;
@@ -15,6 +15,10 @@ export function makeOrder(o: {
     order.total_shipping = o.total_shipping;
     order.total_discount = o.total_discount;
     order.status = o.status;
+
+    if (id) {
+        order.id = id;
+    }
 
     return order;
 };

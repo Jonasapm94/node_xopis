@@ -2,13 +2,14 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import ProductNotFoundError from '../../errors/ProductNotFoundError';
 import { Order, OrderItem, OrderStatus, Product } from '../../models';
 import { CreateOrderRequestType, OrderItemsReplyType } from '../../../src/validations/order.zod';
-import { makeOrder } from 'src/factories/OrderFactory';
+import { makeOrder } from '../../factories/OrderFactory';
+import OrderCannotBeUpdatedError from '../../errors/OrderCannotBeUpdatedError';
 
 export default async (
     request: FastifyRequest<{ Body: CreateOrderRequestType }>,
     reply: FastifyReply
 ) => {
-    const { customer_id, items } = request.body;
+    const { customer_id, items, id } = request.body;
 
     try {
         const order = makeOrder({
@@ -21,10 +22,14 @@ export default async (
                 acc += item.discount || 0;
                 return acc;
             }, 0)
-        });
+        }, id);
+
+        if (id) {
+            const fetchedOrder = await Order.query().findById(id);
+            if (fetchedOrder && fetchedOrder?.status !== OrderStatus.PaymentPending) throw new OrderCannotBeUpdatedError();
+        };
 
         const createdOrder = await Order.transaction(async trx => {
-
             order.items = await Promise.all(items.map(async item => {
                 const discount = item.discount || 0;
 
@@ -49,7 +54,7 @@ export default async (
                 return orderItem;
             }));
 
-            return await order.$query(trx).insertGraphAndFetch(order);
+            return await Order.query(trx).upsertGraphAndFetch(order);
         });
 
         const responsePayload: OrderCreatedResponsePayload = {
@@ -61,11 +66,20 @@ export default async (
             items
         };
 
-        return reply.status(201).send(responsePayload);
+        const responseStatusCode = id ? 200 : 201;
+        return reply.status(responseStatusCode).send(responsePayload);
     } catch (error) {
         if (error instanceof ProductNotFoundError) {
             return reply.status(400).send({ message: 'Product not found.' });
         }
+
+        if (error instanceof OrderCannotBeUpdatedError) {
+            return reply.status(422).send({
+                message:
+                    'Order with id sent has status different than payment_pending. Only orders with that status can be updated.'
+            });
+        }
+
         throw error;
     }
 };
