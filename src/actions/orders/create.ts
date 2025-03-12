@@ -1,5 +1,4 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
-import NotEnoughStockError from '../../errors/NotEnoughStockError';
 import ProductNotFoundError from '../../errors/ProductNotFoundError';
 import { Order, OrderItem, OrderStatus, Product } from '../../models';
 import { CreateOrderRequestType, OrderItemsReplyType } from '../../../src/validations/order.zod';
@@ -29,12 +28,8 @@ export default async (
 
                 const product = await Product.query(trx).findById(item.product_id);
                 if (!product) throw new ProductNotFoundError;
-                if (product!.stock < item.quantity) throw new NotEnoughStockError;
 
                 const paid = (product.price * item.quantity) - discount;
-
-                const newProductStock = product.stock - item.quantity;
-                await product.$query(trx).patch({ stock: newProductStock });
 
                 const orderItem = new OrderItem();
                 orderItem.product_id = product.id;
