@@ -2,6 +2,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import ProductNotFoundError from '../../errors/ProductNotFoundError';
 import { Order, OrderItem, OrderStatus, Product } from '../../models';
 import { CreateOrderRequestType, OrderItemsReplyType } from '../../../src/validations/order.zod';
+import { makeOrder } from 'src/factories/OrderFactory';
 
 export default async (
     request: FastifyRequest<{ Body: CreateOrderRequestType }>,
@@ -10,16 +11,17 @@ export default async (
     const { customer_id, items } = request.body;
 
     try {
-        const order = new Order();
-        order.customer_id = customer_id;
-        order.status = OrderStatus.PaymentPending;
-        order.total_discount = items.reduce((acc, item) => {
-            acc += item.discount || 0;
-            return acc;
-        }, 0);
-        order.total_paid = 0;
-        order.total_shipping = 0;
-        order.total_tax = 0;
+        const order = makeOrder({
+            customer_id,
+            status: OrderStatus.PaymentPending,
+            total_paid: 0,
+            total_tax: 0,
+            total_shipping: 0,
+            total_discount: items.reduce((acc, item) => {
+                acc += item.discount || 0;
+                return acc;
+            }, 0)
+        });
 
         const createdOrder = await Order.transaction(async trx => {
 
