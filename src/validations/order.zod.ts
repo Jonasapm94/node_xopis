@@ -19,3 +19,5 @@ export const createOrderZod = z.object({
         }).optional()
     }).array().nonempty("property 'items' must not be empty")
 });
+
+export type CreateOrderRequestType = z.infer<typeof createOrderZod>;

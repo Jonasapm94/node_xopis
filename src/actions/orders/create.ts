@@ -2,26 +2,28 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import NotEnoughStockError from '../../errors/NotEnoughStockError';
 import ProductNotFoundError from '../../errors/ProductNotFoundError';
 import { Order, OrderItem, OrderStatus, Product } from '../../models';
-import { CreateOrder, OrderItemDTO } from '../../types/CreateOrder.interface';
+import { CreateOrderRequestType, } from '../../../src/validations/order.zod';
+import { OrderItemDTO } from '../../types/CreateOrder.interface';
 
 export default async (
-    request: FastifyRequest<{ Body: CreateOrder }>,
+    request: FastifyRequest<{ Body: CreateOrderRequestType }>,
     reply: FastifyReply
 ) => {
     const { customer_id, items } = request.body;
 
     try {
         const createdOrder = await Order.transaction(async trx => {
-            const order = new Order();
-            order.customer_id = customer_id;
-            order.status = OrderStatus.PaymentPending;
-            order.total_discount = items.reduce((acc, item) => {
-                acc += item.discount || 0;
-                return acc;
-            }, 0);
-            order.total_paid = 0;
-            order.total_tax = 0;
-            order.total_shipping = 0;
+            const order: Partial<Order> = {
+                customer_id,
+                status: OrderStatus.PaymentPending,
+                total_discount: items.reduce((acc, item) => {
+                    acc += item.discount || 0;
+                    return acc;
+                }, 0),
+                total_paid: 0,
+                total_shipping: 0,
+                total_tax: 0
+            };
 
             const createdOrder = await Order.query(trx).insertAndFetch(order);
 
@@ -29,29 +31,35 @@ export default async (
                 if (!item.discount) {
                     item.discount = 0.00;
                 }
+
                 const product = await Product.query(trx).findById(item.product_id);
                 if (!product) throw new ProductNotFoundError;
                 if (product!.stock < item.quantity) throw new NotEnoughStockError;
 
-                const orderItem = new OrderItem();
-                orderItem.order_id = createdOrder.id;
-                orderItem.product_id = product.id;
-                orderItem.quantity = item.quantity;
-                orderItem.discount = item.discount;
-                orderItem.paid = (product.price * item.quantity) - item.discount;
-
                 // they are set to 0 for business logic purposes
-                orderItem.tax = 0;
-                orderItem.shipping = 0;
+                const tax = 0;
+                const shipping = 0;
 
-                await OrderItem.query(trx).insert(orderItem);
+                const paid = (product.price * item.quantity) - item.discount;
+                await OrderItem.query(trx).insert({
+                    order_id: createdOrder.id,
+                    product_id: product.id,
+                    quantity: item.quantity,
+                    discount: item.discount,
+                    paid,
+                    tax,
+                    shipping,
+                });
 
-                createdOrder.total_paid += orderItem.paid;
-                createdOrder.total_tax += orderItem.tax;
-                createdOrder.total_shipping += orderItem.shipping;
+                const newProductStock = product.stock - item.quantity;
+                await product.$query(trx).patch({ stock: newProductStock });
+
+                createdOrder.total_paid += paid;
+                createdOrder.total_tax += tax;
+                createdOrder.total_shipping += shipping;
             }));
 
-            return await Order.query(trx).upsertGraphAndFetch(createdOrder);
+            return await createdOrder.$query(trx).updateAndFetch(createdOrder);
         });
 
         const responsePayload: OrderCreatedResponsePayload = {

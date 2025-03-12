@@ -24,11 +24,10 @@ describe('CREATE action', () => {
 
   describe('when the input is valid', () => {
     beforeEach(async () => {
-      const user: Partial<User> = {
+      await User.query().insert({
         name: 'John Doe',
         email: 'john.doe@email.com'
-      };
-      await User.query().insert(user);
+      });
 
       for (let i = 0; i < 2; i++) {
         const product = new Product();
@@ -89,13 +88,13 @@ describe('CREATE action', () => {
           total_paid: expect.any(Number),
           total_discount: expectedTotalDiscount,
           status: expect.any(String),
-          items: expect.arrayContaining(
+          items: expect.arrayContaining([
             expect.objectContaining({
               product_id: expect.any(Number),
               quantity: expect.any(Number),
               discount: expect.any(Number)
             })
-          )
+          ])
         })
       );
       expect(jsonResponse.items.length).toBe(input.items.length);
