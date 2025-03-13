@@ -15,6 +15,9 @@ export const orderItemsZod = z.object({
 }).array().nonempty("property 'items' must not be empty");
 
 export const createOrderZod = z.object({
+    id: z.number({
+        invalid_type_error: "property 'id' must be an integer",
+    }).int().optional(),
     customer_id: z.number({
         required_error: "must have required property 'customer_id'",
         invalid_type_error: "property 'customer_id' must be integer",
