@@ -25,8 +25,8 @@ class Order extends Model {
   total_shipping!: number;
   total_discount!: number;
   status!: OrderStatus;
-  created_at?: Date;
-  updated_at?: Date;
+  created_at?: string;
+  updated_at?: string;
   items?: Array<OrderItem>;
 
   static get jsonSchema() {

@@ -13,8 +13,8 @@ class OrderItem extends Model {
   shipping!: number;
   discount!: number;
   paid!: number;
-  created_at?: Date;
-  updated_at?: Date;
+  created_at?: string;
+  updated_at?: string;
 
   static get jsonSchema() {
     return {
