@@ -36,7 +36,7 @@ export default async (
                 const product = await Product.query(trx).findById(item.product_id);
                 if (!product) throw new ProductNotFoundError;
 
-                const paid = (product.price * item.quantity) - discount;
+                const paid = Number(((product.price * item.quantity) - discount).toFixed(2));
 
                 const orderItem = new OrderItem();
                 orderItem.product_id = product.id;
